@@ -1,0 +1,51 @@
+"""
+Walk-Forward Validation Demo
+
+Shows model performance across multiple time windows.
+More robust than single train/test split.
+"""
+
+from sklearn.ensemble import RandomForestClassifier
+from feature_engine import load_features_for_training
+from utils import pull_polygon_data, walk_forward_validation
+import pandas as pd
+
+if __name__ == "__main__":
+    API_KEY = "vFDjkUVRfPnedLrbRjm75BZ9CJHz3dfv"
+    TICKER = "AAPL"
+    START = "2025-10-01"
+    END = "2025-11-01"
+
+    print(f"walk-forward validation on {TICKER}")
+    print(f"splitting data into 5 windows, testing each\n")
+
+    df = pull_polygon_data(TICKER, START, END, API_KEY)
+    X, y_binary, y_continuous, _ = load_features_for_training(df)
+
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
+
+    results = walk_forward_validation(X, y_continuous, model, n_splits=5)
+
+    print("="*50)
+    print("WALK-FORWARD VALIDATION RESULTS")
+    print("="*50)
+    print(f"Mean Correlation:  {results['mean_correlation']:>8.4f} ± {results['std_correlation']:.4f}")
+    print(f"Mean Sharpe:       {results['mean_sharpe']:>8.2f} ± {results['std_sharpe']:.2f}")
+    print(f"Mean Return:       {results['mean_return']*100:>8.2f}%")
+    print(f"Worst Drawdown:    {results['worst_drawdown']*100:>8.2f}%")
+    print(f"Consistency:       {results['consistency']*100:>8.1f}% (% positive Sharpe)")
+    print("="*50)
+
+    print("\nPER-SPLIT BREAKDOWN:")
+    print(results['all_splits'].to_string(index=False))
+
+    print("\nINTERPRETATION:")
+    if results['consistency'] > 0.6:
+        print("✓ Strategy is CONSISTENT across time periods")
+    else:
+        print("✗ Strategy is INCONSISTENT - likely overfit to specific period")
+
+    if results['std_sharpe'] < results['mean_sharpe']:
+        print("✓ Strategy has STABLE performance")
+    else:
+        print("✗ Strategy has HIGH VARIANCE - unreliable")

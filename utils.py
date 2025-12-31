@@ -108,9 +108,17 @@ def backtest_strategy(signals, returns, transaction_cost=0.0001, scale_by_confid
 
     profit_factor = winning_trades.sum() / abs(losing_trades.sum()) if len(losing_trades) > 0 else np.inf
 
+    # Information Ratio: Sharpe of excess returns (assuming 0 benchmark)
+    information_ratio = sharpe  # Same as Sharpe when benchmark is 0
+
+    # Calmar Ratio: return / max drawdown (higher is better)
+    calmar = abs(total_return / max_drawdown) if max_drawdown != 0 else 0
+
     return {
         'total_return': total_return,
         'sharpe_ratio': sharpe,
+        'information_ratio': information_ratio,
+        'calmar_ratio': calmar,
         'max_drawdown': max_drawdown,
         'win_rate': win_rate,
         'avg_win': avg_win,
@@ -178,6 +186,8 @@ def print_backtest_results(metrics, title="Backtest Results"):
     print(f"{'='*50}")
     print(f"Total Return:     {metrics['total_return']*100:>8.2f}%")
     print(f"Sharpe Ratio:     {metrics['sharpe_ratio']:>8.2f}")
+    print(f"Information Ratio:{metrics['information_ratio']:>8.2f}")
+    print(f"Calmar Ratio:     {metrics['calmar_ratio']:>8.2f}")
     print(f"Max Drawdown:     {metrics['max_drawdown']*100:>8.2f}%")
     print(f"Win Rate:         {metrics['win_rate']*100:>8.1f}%")
     print(f"Avg Win:          {metrics['avg_win']*100:>8.4f}%")
@@ -252,3 +262,79 @@ def compare_models(results_dict):
     """
     df = pd.DataFrame(results_dict).T
     return df.sort_values('test_acc', ascending=False)
+
+
+def walk_forward_validation(X, y_continuous, model, n_splits=5, train_frac=0.6):
+    """
+    Walk-forward validation - more robust than single train/test split
+
+    Simulates realistic scenario: train on past data, test on future data,
+    then roll forward and repeat. Prevents overfitting to single time period.
+
+    Args:
+        X: feature matrix
+        y_continuous: continuous target (returns)
+        model: sklearn model (will be cloned for each split)
+        n_splits: number of forward validation windows
+        train_frac: fraction of each window to use for training
+
+    Returns:
+        dict with averaged metrics across all splits
+    """
+    from sklearn.base import clone
+
+    total_samples = len(X)
+    window_size = total_samples // n_splits
+
+    results = []
+
+    for i in range(n_splits):
+        start_idx = i * window_size
+        end_idx = min(start_idx + window_size, total_samples)
+
+        if end_idx >= total_samples:
+            break
+
+        X_window = X.iloc[start_idx:end_idx]
+        y_window = y_continuous.iloc[start_idx:end_idx]
+
+        split_idx = int(len(X_window) * train_frac)
+        X_train = X_window.iloc[:split_idx]
+        X_test = X_window.iloc[split_idx:]
+        y_train = y_window.iloc[:split_idx]
+        y_test = y_window.iloc[split_idx:]
+
+        if len(X_test) < 10:
+            continue
+
+        model_clone = clone(model)
+        model_clone.fit(X_train, (y_train > 0).astype(int))
+
+        y_prob = model_clone.predict_proba(X_test)[:, 1]
+        pred_returns = y_prob - 0.5
+
+        corr_result = calculate_realized_correlation(pred_returns, y_test)
+
+        signals = generate_scaled_signals(y_prob, threshold=0.55, scale_by_magnitude=True)
+        backtest_metrics = backtest_strategy(signals, y_test, transaction_cost=0.0001)
+
+        results.append({
+            'split': i,
+            'correlation': corr_result['correlation'],
+            'sharpe': backtest_metrics['sharpe_ratio'],
+            'total_return': backtest_metrics['total_return'],
+            'max_drawdown': backtest_metrics['max_drawdown']
+        })
+
+    df_results = pd.DataFrame(results)
+
+    return {
+        'mean_correlation': df_results['correlation'].mean(),
+        'std_correlation': df_results['correlation'].std(),
+        'mean_sharpe': df_results['sharpe'].mean(),
+        'std_sharpe': df_results['sharpe'].std(),
+        'mean_return': df_results['total_return'].mean(),
+        'worst_drawdown': df_results['max_drawdown'].min(),
+        'consistency': (df_results['sharpe'] > 0).sum() / len(df_results),
+        'all_splits': df_results
+    }

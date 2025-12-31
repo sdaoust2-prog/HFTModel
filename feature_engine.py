@@ -77,6 +77,39 @@ class FeatureEngine:
         return (df['high'] - df['low']) / df['close']
 
     @staticmethod
+    def autocorrelation(df, lookback=5):
+        """Return autocorrelation - measures momentum persistence"""
+        returns = df['close'].pct_change()
+        return returns.rolling(lookback).apply(lambda x: x.autocorr(), raw=False)
+
+    @staticmethod
+    def rolling_sharpe(df, lookback=20):
+        """Rolling Sharpe ratio - risk-adjusted returns"""
+        returns = df['close'].pct_change()
+        rolling_mean = returns.rolling(lookback).mean()
+        rolling_std = returns.rolling(lookback).std()
+        return (rolling_mean / rolling_std) * np.sqrt(lookback)
+
+    @staticmethod
+    def price_acceleration(df, lookback=1):
+        """Second derivative of price - momentum of momentum"""
+        momentum = df['close'].pct_change(lookback)
+        return momentum.diff()
+
+    @staticmethod
+    def volume_price_correlation(df, lookback=10):
+        """Rolling correlation between volume and price changes"""
+        returns = df['close'].pct_change()
+        return returns.rolling(lookback).corr(df['volume'])
+
+    @staticmethod
+    def order_flow_proxy(df):
+        """Microstructure: volume-weighted price pressure"""
+        # Positive when price moves up with volume, negative when down
+        price_change = df['close'].diff()
+        return price_change * df['volume'] / df['volume'].rolling(20).mean()
+
+    @staticmethod
     def compute_all_features(df, feature_list=None):
         """
         Compute multiple features at once.
@@ -98,7 +131,11 @@ class FeatureEngine:
                 ('price_direction', FeatureEngine.price_direction, {}),
                 ('vwap_dev', FeatureEngine.vwap_deviation, {}),
                 ('hour', FeatureEngine.hour, {}),
-                ('minute', FeatureEngine.minute, {})
+                ('minute', FeatureEngine.minute, {}),
+                ('autocorr_5', FeatureEngine.autocorrelation, {'lookback': 5}),
+                ('rolling_sharpe_20', FeatureEngine.rolling_sharpe, {'lookback': 20}),
+                ('price_accel', FeatureEngine.price_acceleration, {'lookback': 1}),
+                ('order_flow', FeatureEngine.order_flow_proxy, {})
             ]
 
         for name, func, kwargs in feature_list:
@@ -163,7 +200,8 @@ def load_features_for_training(df, target_horizon=1, drop_na=True):
         df = df.dropna()
 
     feature_names = ['momentum_1min', 'volatility_1min', 'price_direction',
-                     'vwap_dev', 'hour', 'minute']
+                     'vwap_dev', 'hour', 'minute', 'autocorr_5',
+                     'rolling_sharpe_20', 'price_accel', 'order_flow']
 
     X = df[feature_names]
     y_continuous = df[f'return_{target_horizon}min']
