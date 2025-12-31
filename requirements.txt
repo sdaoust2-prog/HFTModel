@@ -6,3 +6,6 @@ joblib
 fastapi
 uvicorn
 python-dotenv
+matplotlib
+seaborn
+scipy

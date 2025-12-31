@@ -1,27 +1,39 @@
-# ml stock predictor
+# quantitative stock prediction system
 
-random forest classifier for intraday price movement prediction using minute-level data
+comprehensive ML system for intraday price movement prediction with full feature analysis, multiple model types, and rigorous evaluation
 
-## model overview
+## overview
 
-**objective**: predict next-minute price direction (up/down) and convert to trading signals (buy/sell/hold)
+end-to-end quantitative trading system that:
+- analyzes feature predictiveness using Information Coefficient (IC)
+- compares multiple model architectures (linear, regularized, ensemble)
+- evaluates out-of-sample performance with proper metrics
+- backtests strategies with transaction costs and risk metrics
 
 **data source**: polygon.io minute-level ohlcv bars
 
 **features** (6 total):
 - momentum_1min: 1-minute price return
-- volatility_1min: squared momentum
-- price_direction: binary close > open
-- vwap_dev: deviation from volume-weighted average price
-- hour: time of day
-- minute: minute within hour
+- volatility_1min: squared momentum (captures magnitude)
+- price_direction: binary close > open (market sentiment)
+- vwap_dev: deviation from volume-weighted average price (mean reversion signal)
+- hour: time of day (session effects)
+- minute: minute within hour (microstructure)
 
-**model**: random forest (100 trees), chronological train/test split to avoid lookahead bias
+**models implemented**:
+- single best feature baseline (z-scored)
+- multi-feature linear regression
+- ridge regression (L2 regularization)
+- lasso regression (L1 regularization, feature selection)
+- random forest classifier (100 trees)
 
-**decision logic**:
-- buy if P(up) > 0.55
-- sell if P(down) > 0.55
-- hold otherwise
+**evaluation approach**:
+- chronological train/test split (prevents lookahead bias)
+- information coefficient analysis
+- confusion matrix, precision/recall, ROC/AUC
+- feature importance rankings
+- overfitting gap analysis
+- backtest with sharpe ratio, max drawdown, win rate, profit factor
 
 ## performance
 
@@ -49,19 +61,43 @@ cp backend/.env.example backend/.env
 
 ## usage
 
-**train model:**
+**1. feature analysis:**
+```bash
+jupyter notebook feature_analysis.ipynb
+# IC analysis, correlation heatmaps, feature vs return plots
+# winsorization impact, feature distributions
+```
+
+**2. linear models:**
+```bash
+jupyter notebook linear_models.ipynb
+# compare single feature, linear, ridge, lasso
+# train multiple regression models
+# saves best linear model
+```
+
+**3. random forest (main model):**
 ```bash
 jupyter notebook predictor.ipynb
-# runs training, saves to trained_stock_model.pkl
+# full evaluation: confusion matrix, ROC/AUC, feature importance
+# saves trained_stock_model.pkl
 ```
 
-**backtest:**
+**4. model comparison:**
+```bash
+jupyter notebook model_comparison.ipynb
+# side-by-side comparison of all models
+# backtest performance metrics for each
+# identifies best model by multiple criteria
+```
+
+**5. backtest:**
 ```bash
 python3 backtest.py
-# outputs sharpe, max dd, win rate, profit factor, etc
+# detailed metrics: sharpe, max dd, win rate, avg win/loss, turnover
 ```
 
-**live api:**
+**6. live api:**
 ```bash
 cd backend
 python3 api.py
@@ -73,11 +109,15 @@ curl http://localhost:8000/api/predict/AAPL
 
 ```
 Project/
-├── predictor.ipynb          # model training notebook
-├── backtest.py              # backtesting with proper metrics
-├── trained_stock_model.pkl  # saved random forest model
+├── feature_analysis.ipynb      # IC analysis, feature-return correlations
+├── linear_models.ipynb         # linear/ridge/lasso model comparison
+├── predictor.ipynb            # random forest with full evaluation
+├── model_comparison.ipynb     # compare all model types
+├── backtest.py                # backtesting with enhanced metrics
+├── trained_stock_model.pkl    # saved random forest model
+├── trained_linear_model.pkl   # saved best linear model (optional)
 ├── backend/
-│   └── api.py              # fastapi server for live predictions
+│   └── api.py                # fastapi server for live predictions
 └── requirements.txt
 ```
 
@@ -88,17 +128,34 @@ Project/
 - chronological split prevents lookahead bias (critical for live trading)
 - transaction costs included in backtest (10bps per trade)
 
-## limitations
+## what makes this quant-ready
 
-- model barely beats random (52-53% accuracy)
-- negative sharpe in backtest period
-- high trade frequency (524 trades in 1 month) = high transaction costs
-- no risk management (fixed position sizing)
-- features are too simple for real alpha
+unlike toy ML projects, this system demonstrates production quantitative workflows:
 
-this is a starting framework. real improvements would need:
-- more sophisticated features (order flow, market microstructure)
-- longer training period
-- ensemble methods or deep learning
-- proper position sizing and risk controls
-- regime detection
+1. **feature analysis first**: IC curves, correlation analysis, winsorization impact before modeling
+2. **multiple model comparison**: baseline → linear → regularized → ensemble with rigorous evaluation
+3. **proper time series handling**: chronological splits, no lookahead bias
+4. **comprehensive evaluation**: not just accuracy, but precision/recall/AUC/sharpe/drawdown
+5. **overfitting detection**: explicit train-test gaps reported for all metrics
+6. **realistic backtesting**: transaction costs, position tracking, proper sharpe calculation
+7. **model comparison framework**: systematic approach to choosing best model
+
+these are the practices used in actual quant firms, not academic ML.
+
+## current limitations & future improvements
+
+**current state:**
+- model barely beats random (52-53% accuracy typical for minute data)
+- features are basic (no order book, no microstructure signals)
+- no dynamic position sizing or risk management
+- single ticker (no cross-sectional analysis)
+- short training period (1 month)
+
+**next steps for real alpha:**
+- level 2 data: bid-ask spreads, order book imbalance, aggressor flow
+- longer history: train on 6-12 months, validate on holdout period
+- cross-sectional signals: relative momentum, sector effects
+- regime detection: separate models for high/low volatility
+- position sizing: scale with signal strength and volatility
+- portfolio construction: diversification across multiple tickers
+- online learning: retrain models periodically with new data
