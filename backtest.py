@@ -20,10 +20,10 @@ def run_backtest(model, df, prob_threshold=0.55, transaction_cost=0.0001):
 
 
 if __name__ == "__main__":
-    API_KEY = "vFDjkUVRfPnedLrbRjm75BZ9CJHz3dfv"
+    API_KEY = "MSeDps8X9ILJUQC4Lxfw5_h4DMdO1ZVB"
     TICKER = "AAPL"
-    START = "2025-10-01"
-    END = "2025-11-01"
+    START = "2025-01-01"
+    END = "2025-12-31"
 
     print(f"backtesting {TICKER} from {START} to {END}")
 

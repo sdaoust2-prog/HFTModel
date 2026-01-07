@@ -11,10 +11,10 @@ from utils import pull_polygon_data, walk_forward_validation
 import pandas as pd
 
 if __name__ == "__main__":
-    API_KEY = "vFDjkUVRfPnedLrbRjm75BZ9CJHz3dfv"
+    API_KEY = "MSeDps8X9ILJUQC4Lxfw5_h4DMdO1ZVB"
     TICKER = "AAPL"
-    START = "2025-10-01"
-    END = "2025-11-01"
+    START = "2025-01-01"
+    END = "2025-12-31"
 
     print(f"walk-forward validation on {TICKER}")
     print(f"splitting data into 5 windows, testing each\n")

@@ -45,8 +45,10 @@ if __name__ == "__main__":
     print(f"training on {TICKER} from {START} to {END}")
 
     df = pull_polygon_data(TICKER, START, END, API_KEY)
-
+    df.to_parquet(f"/Users/shaundaoust/data/polygon/{TICKER}_{START}_{END}.pq")
     model, X_test, y_test, y_prob = train_model(df, model_type='rf')
+
+    breakpoint()
 
     joblib.dump(model, 'trained_stock_model.pkl')
     print("\nmodel saved to trained_stock_model.pkl")
