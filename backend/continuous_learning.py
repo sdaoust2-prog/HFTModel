@@ -229,6 +229,12 @@ class ContinuousLearning:
 
         return self.metadata.sort_values('trained_date', ascending=False)
 
+    def get_current_model_age(self):
+        model_path = os.path.join(os.path.dirname(__file__), '..', 'trained_stock_model.pkl')
+        if os.path.exists(model_path):
+            return os.path.getmtime(model_path)
+        return 0
+
     def rollback_to_previous_model(self):
         if self.metadata.empty or len(self.metadata) < 2:
             print("no previous model to rollback to")

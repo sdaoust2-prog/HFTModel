@@ -351,6 +351,29 @@ class TradingBot:
 
         print(f"{'='*60}\n")
 
+    def check_eod_liquidation(self):
+        if not config.LIQUIDATE_EOD:
+            return
+
+        now = datetime.now()
+        current_time_str = now.strftime("%H:%M")
+
+        if current_time_str >= config.EOD_LIQUIDATION_TIME:
+            positions = self.get_current_positions()
+
+            if positions:
+                print(f"\n{'='*60}")
+                print("END OF DAY LIQUIDATION")
+                print(f"{'='*60}")
+                print(f"closing {len(positions)} positions before market close...")
+
+                for ticker in positions:
+                    pos = positions[ticker]
+                    close_side = OrderSide.SELL if pos['qty'] > 0 else OrderSide.BUY
+                    self.place_order(ticker, close_side, int(abs(pos['qty'])), pos['current_price'])
+
+                print(f"{'='*60}\n")
+
     def run(self, skip_hours_check=False):
         print("starting trading bot...")
 
@@ -362,6 +385,8 @@ class TradingBot:
                     continue
 
                 self.check_and_reload_model()
+
+                self.check_eod_liquidation()
 
                 self.check_exit_signals()
 
