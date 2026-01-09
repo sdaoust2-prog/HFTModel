@@ -5,17 +5,11 @@ from utils import pull_polygon_data, train_test_split_chronological, backtest_st
 
 
 def run_backtest(model, df, prob_threshold=0.55, transaction_cost=0.0001):
-    """Backtest a trained model on test data"""
-
     X, y_binary, y_continuous, _ = load_features_for_training(df)
-
     _, X_test, _, y_test_cont = train_test_split_chronological(X, y_continuous, train_frac=0.8)
-
     prob = model.predict_proba(X_test)
-
     signals = np.where(prob[:, 1] > prob_threshold, 1,
               np.where(prob[:, 0] > prob_threshold, -1, 0))
-
     return backtest_strategy(signals, y_test_cont, transaction_cost)
 
 

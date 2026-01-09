@@ -1,10 +1,3 @@
-"""
-Walk-Forward Validation Demo
-
-Shows model performance across multiple time windows.
-More robust than single train/test split.
-"""
-
 from sklearn.ensemble import RandomForestClassifier
 from feature_engine import load_features_for_training
 from utils import pull_polygon_data, walk_forward_validation
@@ -39,13 +32,12 @@ if __name__ == "__main__":
     print("\nPER-SPLIT BREAKDOWN:")
     print(results['all_splits'].to_string(index=False))
 
-    print("\nINTERPRETATION:")
+    print("\nInterpretation:")
     if results['consistency'] > 0.6:
-        print("✓ Strategy is CONSISTENT across time periods")
+        print("consistent across time periods")
     else:
-        print("✗ Strategy is INCONSISTENT - likely overfit to specific period")
-
+        print("inconsistent - likely overfit")
     if results['std_sharpe'] < results['mean_sharpe']:
-        print("✓ Strategy has STABLE performance")
+        print("stable performance")
     else:
-        print("✗ Strategy has HIGH VARIANCE - unreliable")
+        print("high variance")

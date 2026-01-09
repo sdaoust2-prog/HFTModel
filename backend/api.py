@@ -17,7 +17,6 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# cors for frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -30,8 +29,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# load model on startup
 MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "trained_stock_model.pkl")
 try:
     model = joblib.load(MODEL_PATH)
@@ -93,20 +90,14 @@ def pull_polygon_data(ticker: str, start: str, end: str, api_key: str) -> pd.Dat
 
 
 def calculate_features_for_prediction(df: pd.DataFrame) -> tuple:
-    # need last 2 bars for momentum calc
     last_two = df.iloc[-2:]
-
     momentum_1min = (last_two['close'].iloc[1] - last_two['close'].iloc[0]) / last_two['close'].iloc[0]
     volatility_1min = momentum_1min ** 2
     price_direction = int(last_two['close'].iloc[1] > last_two['open'].iloc[1])
-
-    # vwap deviation
     vwap = (df['close'] * df['volume']).cumsum() / df['volume'].cumsum()
     vwap_dev = (last_two['close'].iloc[1] - vwap.iloc[-1]) / vwap.iloc[-1]
-
     hour = last_two['timestamp'].iloc[1].hour
     minute = last_two['timestamp'].iloc[1].minute
-
     features = {
         'momentum_1min': momentum_1min,
         'volatility_1min': volatility_1min,
@@ -115,7 +106,6 @@ def calculate_features_for_prediction(df: pd.DataFrame) -> tuple:
         'hour': hour,
         'minute': minute
     }
-
     return features, last_two.iloc[1]
 
 @app.get("/", response_model=HealthResponse)
@@ -151,8 +141,6 @@ async def predict_stock(ticker: str, prob_threshold: float = 0.55):
             'hour': features['hour'],
             'minute': features['minute']
         }])
-
-        # returns [P(down), P(up)]
         pred_proba = model.predict_proba(feature_row)[0]
 
         if pred_proba[1] > prob_threshold:
