@@ -15,6 +15,9 @@ import trader_config as config
 
 load_dotenv()
 
+if config.USE_REALISTIC_COSTS or config.ENABLE_TAX_TRACKING:
+    from realistic_costs import RealisticCostModel, TaxTracker
+
 class TradingBot:
     def __init__(self):
         self.api_key = os.getenv('ALPACA_API_KEY')
@@ -32,12 +35,24 @@ class TradingBot:
         self.daily_pnl = 0.0
         self.start_cash = None
 
+        if config.USE_REALISTIC_COSTS:
+            self.cost_model = RealisticCostModel()
+        else:
+            self.cost_model = None
+
+        if config.ENABLE_TAX_TRACKING:
+            self.tax_tracker = TaxTracker()
+        else:
+            self.tax_tracker = None
+
         print(f"bot initialized at {datetime.now()}")
         print(f"watchlist: {config.WATCHLIST}")
         print(f"max positions: {config.MAX_POSITIONS}")
         print(f"position size: ${config.POSITION_SIZE_USD}")
         print(f"shorting: {'ENABLED' if config.ALLOW_SHORTING else 'DISABLED'}")
         print(f"model auto-reload: every {config.MODEL_RELOAD_INTERVAL_HOURS} hours")
+        print(f"realistic costs: {'ENABLED' if config.USE_REALISTIC_COSTS else 'DISABLED'}")
+        print(f"tax tracking: {'ENABLED' if config.ENABLE_TAX_TRACKING else 'DISABLED'}")
 
     def get_account_info(self):
         account = self.trading_client.get_account()
@@ -178,7 +193,7 @@ class TradingBot:
             print(f"error getting positions: {e}")
             return {}
 
-    def place_order(self, ticker, side, qty):
+    def place_order(self, ticker, side, qty, price=None):
         try:
             order_data = MarketOrderRequest(
                 symbol=ticker,
@@ -187,7 +202,27 @@ class TradingBot:
                 time_in_force=TimeInForce.DAY
             )
             order = self.trading_client.submit_order(order_data)
-            print(f"order placed: {side} {qty} {ticker} (order id: {order.id})")
+
+            if self.cost_model and price:
+                costs = self.cost_model.calculate_total_cost(
+                    ticker=ticker,
+                    qty=qty,
+                    price=price,
+                    side='BUY' if side == OrderSide.BUY else 'SELL',
+                    timestamp=datetime.now()
+                )
+                print(f"order placed: {side} {qty} {ticker} @ ${price:.2f}")
+                print(f"  estimated cost: ${costs['total_cost']:.2f} ({costs['cost_percentage']*100:.3f}%)")
+            else:
+                print(f"order placed: {side} {qty} {ticker} (order id: {order.id})")
+
+            if self.tax_tracker and side == OrderSide.BUY:
+                self.tax_tracker.open_position(ticker, qty, price or 0, datetime.now(), side='LONG')
+            elif self.tax_tracker and side == OrderSide.SELL:
+                positions = self.get_current_positions()
+                if ticker not in positions:
+                    self.tax_tracker.open_position(ticker, qty, price or 0, datetime.now(), side='SHORT')
+
             return order
         except Exception as e:
             print(f"order failed for {ticker}: {e}")
@@ -219,12 +254,26 @@ class TradingBot:
             if pnl_pct <= -config.STOP_LOSS_PCT:
                 print(f"stop loss triggered for {ticker}: {pnl_pct*100:.2f}%")
                 close_side = OrderSide.SELL if is_long else OrderSide.BUY
-                self.place_order(ticker, close_side, int(abs(pos['qty'])))
+                self.place_order(ticker, close_side, int(abs(pos['qty'])), pos['current_price'])
+
+                if self.tax_tracker:
+                    tax_result = self.tax_tracker.close_position(ticker, abs(pos['qty']),
+                                                                 pos['current_price'], datetime.now())
+                    if tax_result:
+                        print(f"  tax liability: ${tax_result['tax_owed']:.2f} " +
+                              f"({tax_result['tax_type']}, net: ${tax_result['net_gain']:.2f})")
 
             elif pnl_pct >= config.TAKE_PROFIT_PCT:
                 print(f"take profit triggered for {ticker}: {pnl_pct*100:.2f}%")
                 close_side = OrderSide.SELL if is_long else OrderSide.BUY
-                self.place_order(ticker, close_side, int(abs(pos['qty'])))
+                self.place_order(ticker, close_side, int(abs(pos['qty'])), pos['current_price'])
+
+                if self.tax_tracker:
+                    tax_result = self.tax_tracker.close_position(ticker, abs(pos['qty']),
+                                                                 pos['current_price'], datetime.now())
+                    if tax_result:
+                        print(f"  tax liability: ${tax_result['tax_owed']:.2f} " +
+                              f"({tax_result['tax_type']}, net: ${tax_result['net_gain']:.2f})")
 
     def execute_strategy(self, ticker):
         current_positions = self.get_current_positions()
@@ -244,14 +293,14 @@ class TradingBot:
             qty = int(config.POSITION_SIZE_USD / current_price)
             if qty > 0:
                 print(f"{ticker}: BUY signal (confidence: {prob_up:.3f}, price: ${current_price:.2f})")
-                self.place_order(ticker, OrderSide.BUY, qty)
+                self.place_order(ticker, OrderSide.BUY, qty, current_price)
 
         elif prob_down > config.PREDICTION_THRESHOLD:
             if config.ALLOW_SHORTING:
                 qty = int(config.POSITION_SIZE_USD / current_price)
                 if qty > 0:
                     print(f"{ticker}: SHORT signal (confidence: {prob_down:.3f}, price: ${current_price:.2f})")
-                    self.place_order(ticker, OrderSide.SELL, qty)
+                    self.place_order(ticker, OrderSide.SELL, qty, current_price)
             else:
                 print(f"{ticker}: SELL signal ignored (shorting disabled), confidence: {prob_down:.3f}")
 
@@ -287,6 +336,19 @@ class TradingBot:
                 direction = "LONG" if pos['qty'] > 0 else "SHORT"
                 print(f"  {ticker} {direction}: {abs(pos['qty'])} shares @ ${pos['entry_price']:.2f} | "
                       f"current: ${pos['current_price']:.2f} | pnl: ${pos['pnl']:+.2f} ({pos['pnl_pct']*100:+.2f}%)")
+
+                if self.cost_model:
+                    cost_info = self.cost_model.get_typical_cost_bps(ticker)
+                    print(f"    typical costs: {cost_info['total_bps']:.1f} bps")
+
+        if self.tax_tracker:
+            tax_summary = self.tax_tracker.get_tax_summary()
+            if tax_summary['num_trades'] > 0:
+                print(f"\ntax summary:")
+                print(f"  realized gain: ${tax_summary['total_realized_gain']:,.2f}")
+                print(f"  tax owed: ${tax_summary['total_tax_owed']:,.2f}")
+                print(f"  net after tax: ${tax_summary['net_after_tax']:,.2f}")
+
         print(f"{'='*60}\n")
 
     def run(self, skip_hours_check=False):
