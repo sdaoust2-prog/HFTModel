@@ -23,8 +23,10 @@ class TradingBot:
         self.trading_client = TradingClient(self.api_key, self.secret_key, paper=True)
         self.data_client = StockHistoricalDataClient(self.api_key, self.secret_key)
 
-        model_path = os.path.join(os.path.dirname(__file__), "..", "trained_stock_model.pkl")
-        self.model = joblib.load(model_path)
+        self.model_path = os.path.join(os.path.dirname(__file__), "..", "trained_stock_model.pkl")
+        self.model = joblib.load(self.model_path)
+        self.model_last_modified = os.path.getmtime(self.model_path)
+        self.last_model_check = datetime.now()
 
         self.positions = {}
         self.daily_pnl = 0.0
@@ -35,12 +37,42 @@ class TradingBot:
         print(f"max positions: {config.MAX_POSITIONS}")
         print(f"position size: ${config.POSITION_SIZE_USD}")
         print(f"shorting: {'ENABLED' if config.ALLOW_SHORTING else 'DISABLED'}")
+        print(f"model auto-reload: every {config.MODEL_RELOAD_INTERVAL_HOURS} hours")
 
     def get_account_info(self):
         account = self.trading_client.get_account()
         if self.start_cash is None:
             self.start_cash = float(account.cash)
         return account
+
+    def check_and_reload_model(self):
+        hours_since_check = (datetime.now() - self.last_model_check).total_seconds() / 3600
+
+        if hours_since_check < config.MODEL_RELOAD_INTERVAL_HOURS:
+            return False
+
+        self.last_model_check = datetime.now()
+
+        try:
+            current_mtime = os.path.getmtime(self.model_path)
+
+            if current_mtime > self.model_last_modified:
+                print(f"\n{'='*60}")
+                print("NEW MODEL DETECTED - RELOADING")
+                print(f"{'='*60}")
+
+                self.model = joblib.load(self.model_path)
+                self.model_last_modified = current_mtime
+
+                print(f"Model reloaded at {datetime.now()}")
+                print(f"{'='*60}\n")
+
+                return True
+
+        except Exception as e:
+            print(f"error reloading model: {e}")
+
+        return False
 
     def get_market_data(self, ticker, lookback_minutes=60):
         end = datetime.now()
@@ -266,6 +298,8 @@ class TradingBot:
                     print("market closed, waiting...")
                     time.sleep(300)
                     continue
+
+                self.check_and_reload_model()
 
                 self.check_exit_signals()
 
